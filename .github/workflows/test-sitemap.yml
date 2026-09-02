@@ -1,0 +1,59 @@
+name: Probar sitemap ECI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-sitemap:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar sitemap
+        run: |
+          set -e
+
+          URL="https://www.elcorteingles.es/sgfm/statics-front/front-msh3-eci-es/contents/sitemap-variants/sitemap.xml.gz"
+
+          echo "Descargando sitemap..."
+          curl -L --fail --compressed \
+            -A "Mozilla/5.0" \
+            "$URL" \
+            -o sitemap.xml.gz
+
+          echo "Descarga correcta:"
+          ls -lh sitemap.xml.gz
+
+      - name: Descomprimir sitemap
+        run: |
+          set -e
+
+          gzip -dc sitemap.xml.gz > sitemap.xml
+
+          echo "Sitemap descomprimido:"
+          ls -lh sitemap.xml
+
+          echo "Primeras líneas:"
+          head -n 20 sitemap.xml
+
+      - name: Buscar nuestras películas
+        run: |
+          echo "Buscando títulos..."
+
+          for termino in \
+            "fast and furious" \
+            "todo gas" \
+            "entrevista con el vampiro" \
+            "outlander" \
+            "midsommar" \
+            "united 93" \
+            "28 dias despues" \
+            "supergirl" \
+            "dia de la revelacion"
+          do
+            echo ""
+            echo "========================================"
+            echo "BUSCANDO: $termino"
+            echo "========================================"
+
+            grep -i "$termino" sitemap.xml || echo "No encontrado"
+          done
