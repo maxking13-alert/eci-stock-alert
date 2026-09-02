@@ -1,41 +1,117 @@
-name: Monitor El Corte Inglés
+name: Diagnostico ECI
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  monitor:
+  diagnostico:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Descargar repositorio
-        uses: actions/checkout@v4
-
-      - name: Configurar Python
+      - name: Instalar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Instalar dependencias
+      - name: Instalar Playwright
         run: |
-          pip install -r requirements.txt
+          pip install playwright
+          playwright install chromium
+          playwright install-deps chromium
 
-      - name: Ejecutar monitor
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Crear script de diagnóstico
         run: |
-          python monitor.py
+          cat > diagnostico.py <<'PY'
+          from playwright.sync_api import sync_playwright
+          from pathlib import Path
 
-      - name: Guardar estado
+          URL = "https://www.elcorteingles.es/search/?s=midsommar"
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(
+                  headless=True
+              )
+
+              page = browser.new_page(
+                  locale="es-ES",
+                  user_agent=(
+                      "Mozilla/5.0 (X11; Linux x86_64) "
+                      "AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) "
+                      "Chrome/140.0 Safari/537.36"
+                  )
+              )
+
+              print("Abriendo ECI...")
+              response = page.goto(
+                  URL,
+                  wait_until="domcontentloaded",
+                  timeout=60000
+              )
+
+              print("URL final:", page.url)
+
+              if response:
+                  print("HTTP:", response.status)
+
+              page.wait_for_timeout(5000)
+
+              print("\n========== TITULO ==========")
+              print(page.title())
+
+              print("\n========== TEXTO ==========")
+              text = page.locator("body").inner_text()
+
+              print(text[:15000])
+
+              print("\n========== ENLACES ==========")
+
+              links = page.locator("a").all()
+
+              encontrados = 0
+
+              for link in links:
+                  try:
+                      texto = link.inner_text().strip()
+                      href = link.get_attribute("href")
+
+                      if not href:
+                          continue
+
+                      if "midsommar" in texto.lower() or "midsommar" in href.lower():
+                          print("---")
+                          print("TEXTO:", texto)
+                          print("URL:", href)
+                          encontrados += 1
+
+                  except Exception:
+                      pass
+
+              print(
+                  f"\nEncontrados relacionados con Midsommar: {encontrados}"
+              )
+
+              Path("eci.html").write_text(
+                  page.content(),
+                  encoding="utf-8"
+              )
+
+              page.screenshot(
+                  path="eci.png",
+                  full_page=True
+              )
+
+              browser.close()
+          PY
+
+      - name: Ejecutar diagnóstico
         run: |
-          git config user.name "ECI Monitor"
-          git config user.email "eci-monitor@users.noreply.github.com"
-          git add state.json
-          git diff --cached --quiet || git commit -m "Update monitor state"
-          git push
+          python diagnostico.py
+
+      - name: Guardar HTML y captura
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-eci
+          path: |
+            eci.html
+            eci.png
